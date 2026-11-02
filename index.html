@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <title>Список завдань (WebSocket)</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; }
+    li { margin: 6px 0; }
+    #log { background: #f4f4f4; padding: 8px; height: 120px; overflow: auto; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <h2>Список завдань</h2>
+  <button id="connect">Підключитись</button>
+  <button id="disconnect" disabled>Відключитись</button>
+  <span id="state">не підключено</span>
+  <hr>
+  <input id="title" placeholder="Нове завдання">
+  <button id="add" disabled>Додати</button>
+  <button id="refresh" disabled>Оновити список</button>
+  <ul id="list"></ul>
+  <h4>Журнал</h4>
+  <div id="log"></div>
+
+<script>
+let ws;
+const $ = (id) => document.getElementById(id);
+const log = (t) => { $('log').innerHTML += t + '<br>'; $('log').scrollTop = 1e9; };
+const setUi = (on) => {
+  ['disconnect', 'add', 'refresh'].forEach((i) => $(i).disabled = !on);
+  $('connect').disabled = on;
+  $('state').textContent = on ? 'підключено' : 'не підключено';
+};
+function send(obj) {
+  ws.send(JSON.stringify(obj));
+  log('→ ' + JSON.stringify(obj));
+}
+
+$('connect').onclick = () => {
+  ws = new WebSocket('ws://localhost:8080');
+  ws.onopen = () => { setUi(true); log('З\'єднання встановлено'); send({ action: 'get_tasks' }); };
+  ws.onmessage = (e) => {
+    log('← ' + e.data);
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'tasks') render(msg.data);
+    if (msg.type === 'error') alert(msg.message);
+  };
+  ws.onclose = (e) => { setUi(false); log('З\'єднання закрито, код ' + e.code); };
+  ws.onerror = () => log('Помилка з\'єднання');
+};
+$('disconnect').onclick = () => ws.close(1000, 'Клієнт закрив з\'єднання');
+$('refresh').onclick = () => send({ action: 'get_tasks' });
+$('add').onclick = () => {
+  send({ action: 'add_task', title: $('title').value });
+  $('title').value = '';
+};
+
+function render(tasks) {
+  $('list').innerHTML = '';
+  tasks.forEach((t) => {
+    const li = document.createElement('li');
+    li.append(`#${t.id} ${t.title} — `);
+    const sel = document.createElement('select');
+    [['new', 'Нове'], ['in_progress', 'В роботі'], ['done', 'Виконано']].forEach(([v, n]) => {
+      const o = new Option(n, v); o.selected = t.status === v; sel.add(o);
+    });
+    sel.onchange = () => send({ action: 'update_status', id: t.id, status: sel.value });
+    li.append(sel);
+    $('list').append(li);
+  });
+}
+</script>
+</body>
+</html>
